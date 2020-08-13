@@ -13,7 +13,7 @@ from habitat.tasks.nav.shortest_path_follower import ShortestPathFollower
 from habitat.utils.visualizations import maps
 from habitat.utils.visualizations.utils import images_to_video
 from habitat.tasks.nav.nav import NavigationEpisode, NavigationGoal
-import matplotlib.pyplot as plt
+
 cv2 = try_cv2_import()
 
 IMAGE_DIR = os.path.join("examples", "images")
@@ -39,22 +39,17 @@ def draw_top_down_map(info, heading, output_size):
         info["top_down_map"]["map"], info["top_down_map"]["fog_of_war_mask"]
     )
     original_map_size = top_down_map.shape[:2]
-    print (original_map_size)
-    
     map_scale = np.array(
         (1, original_map_size[1] * 1.0 / original_map_size[0])
     )
     new_map_size = np.round(output_size * map_scale).astype(np.int32)
-    #OpenCV expects w, h but map size is in h, w
+    # OpenCV expects w, h but map size is in h, w
     top_down_map = cv2.resize(top_down_map, (new_map_size[1], new_map_size[0]))
 
     map_agent_pos = info["top_down_map"]["agent_map_coord"]
-    #print (map_agent_pos)
     map_agent_pos = np.round(
         map_agent_pos * new_map_size / original_map_size
     ).astype(np.int32)
-    #print (map_agent_pos)
-    
     top_down_map = maps.draw_agent(
         top_down_map,
         map_agent_pos,
@@ -67,13 +62,13 @@ def draw_top_down_map(info, heading, output_size):
 def shortest_path_example():
     config = habitat.get_config(config_paths="configs/tasks/pointnav.yaml")
     config.defrost()
-    #config.SIMULATOR.AGENT_0.IS_SET_START_STATE=True
     config.TASK.MEASUREMENTS.append("TOP_DOWN_MAP")
     config.TASK.SENSORS.append("HEADING_SENSOR")
     config.freeze()
     print (config)
+    
     with SimpleRLEnv(config=config) as env:
-        #print (len(env.episodes))
+        print (len(env.episodes))
         #exit()
         goal = env.episodes[1500].goals[0].position
         print ('goal ==>', goal)
@@ -86,7 +81,7 @@ def shortest_path_example():
         )
 
         print("Environment creation successful")
-        for episode in range(10):
+        for episode in range(1):
             env.reset()
             print ('-----------------------------',
                     env.episodes[0].goals[0].position)
@@ -98,12 +93,16 @@ def shortest_path_example():
             os.makedirs(dirname)
             print("Agent stepping around inside environment.")
             images = []
-            while not env.habitat_env.episode_over:
+            while len(images)<1000:
+                print (len(images))
                 best_action = follower.get_next_action(
                     env.habitat_env.current_episode.goals[0].position
                 )
-                if best_action is None:
-                    break
+                #if best_action is None:
+                #    break
+                #
+                if env.habitat_env.episode_over:
+                    env.reset()
 
                 observations, reward, done, info = env.step(best_action)
                 im = observations["rgb"]
@@ -111,7 +110,8 @@ def shortest_path_example():
                     info, observations["heading"][0], im.shape[0]
                 )
                 output_im = np.concatenate((im, top_down_map), axis=1)
-                images.append(output_im)
+                print (output_im.shape)
+                images.append(output_im)               
             images_to_video(images, dirname, "trajectory_%d"%episode)
             print("Episode finished")
 
