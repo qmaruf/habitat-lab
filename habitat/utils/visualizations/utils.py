@@ -131,6 +131,7 @@ def images_to_video(
     )
     logger.info(f"Video created: {os.path.join(output_dir, video_name)}")
     for im in tqdm.tqdm(images):
+        im = cv2.resize(im, (719, 256))
         writer.append_data(im)
     writer.close()
 

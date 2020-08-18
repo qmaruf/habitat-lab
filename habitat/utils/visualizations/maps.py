@@ -85,6 +85,8 @@ def draw_agent(
         (agent_size_px, agent_size_px),
         interpolation=cv2.INTER_LINEAR,
     )
+    #raise Exception()
+    #print (image.shape, resized_agent.shape)
     utils.paste_overlapping_image(image, resized_agent, agent_center_coord)
     return image
 
