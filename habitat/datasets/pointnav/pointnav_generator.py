@@ -122,6 +122,8 @@ def generate_pointnav_episode(
     currently loaded into simulator scene.
     """
     episode_count = 0
+    source_position = None
+    num_episodes = 50
     while episode_count < num_episodes or num_episodes < 0:
         target_position = sim.sample_navigable_point()
 
@@ -129,7 +131,8 @@ def generate_pointnav_episode(
             continue
 
         for retry in range(number_retries_per_target):
-            source_position = sim.sample_navigable_point()
+            if source_position is None:
+                source_position = sim.sample_navigable_point()
 
             is_compatible, dist = is_compatible_episode(
                 source_position,
@@ -171,5 +174,9 @@ def generate_pointnav_episode(
                 info={"geodesic_distance": dist},
             )
 
+            source_position = target_position
+
             episode_count += 1
             yield episode
+
+        
