@@ -17,6 +17,7 @@ from habitat.utils.visualizations import maps
 from habitat.utils.visualizations.utils import images_to_video
 from habitat.tasks.nav.nav import NavigationEpisode, NavigationGoal
 import matplotlib.pyplot as plt
+from pathlib import Path
 cv2 = try_cv2_import()
 
 IMAGE_DIR = os.path.join("examples", "images")
@@ -76,23 +77,30 @@ def semantic_to_rgba(semantic_obs):
     semantic_img = semantic_img.convert("RGB")
     return semantic_img
 
-images = []
 
-def shortest_path_example(episode_id):
+
+def shortest_path_example(scene, data_path):
+    images = []
     config = habitat.get_config(config_paths="configs/tasks/pointnav.yaml")
     config.defrost()    
     config.TASK.MEASUREMENTS.append("TOP_DOWN_MAP")
     config.TASK.SENSORS.append("HEADING_SENSOR")
-    config.SIMULATOR.SCENE='/data/data/gibson_semantic/Allensville.glb'
-    config.DATASET.DATA_PATH='/habitat-api/pointnavs/Allensville.json.gz'
+    # config.SIMULATOR.SCENE='/data/data/gibson_semantic/Allensville.glb'
+    # config.DATASET.DATA_PATH='/habitat-api/pointnavs/Allensville.json.gz'
+
+    config.SIMULATOR.SCENE = scene # '/data/data/matterport3d/v1/tasks/mp3d/gTV8FGcVJC9/gTV8FGcVJC9.glb'
+    config.DATASET.DATA_PATH = data_path # '/habitat-api/pointnavs/gTV8FGcVJC9.json.gz'
     config.ENVIRONMENT.ITERATOR_OPTIONS.SHUFFLE=False
     config.freeze()
+
+    out_vid = Path(config.SIMULATOR.SCENE).stem
     
     with SimpleRLEnv(config=config) as env:                   
         goal_radius = config.SIMULATOR.FORWARD_STEP_SIZE
         follower = ShortestPathFollower(env.habitat_env.sim, goal_radius, False)
         
-        for iii in range(len(env.episodes)):
+        n = 10 # len(env.episodes)
+        for iii in range(n):
             env.reset()
             print (env.current_episode)
             # continue
@@ -108,11 +116,13 @@ def shortest_path_example(episode_id):
             print ('-------------'*10)
             # raise Exception()
             
-            dirname = os.path.join(IMAGE_DIR, "shortest_path_example", "dir_%d"%iii)
+            dirname = os.path.join(IMAGE_DIR, "shortest_path_example", out_vid)
+            print (dirname)
+            # exit()
             
-            if os.path.exists(dirname):
-                shutil.rmtree(dirname)
-            os.makedirs(dirname)
+            # if os.path.exists(dirname):
+            #     shutil.rmtree(dirname)
+            # os.makedirs(dirname)
             
             print("Agent stepping around inside environment.")
             
@@ -139,16 +149,35 @@ def shortest_path_example(episode_id):
                 output_im = np.concatenate((im_rgb, im_sem, top_down_map), axis=1)
                 # output_im = np.concatenate((output_im, top_down_map), axis=1)
                 images.append(output_im)
+                # print (output_im.shape)
             
             print('*********************************************************************************************', iii)
         print (dirname)
-        images_to_video(images, dirname, "trajectory_%d"%(iii))
+
+        
+        images_to_video(images, dirname, out_vid)
         print("Episode finished")
 
 
 
 
+from glob import glob
+def main():
 
+    scenes = glob('/data/data/matterport3d/v1/tasks/mp3d/*/*.glb')
+    data_paths = ['/habitat-api/pointnavs/%s.json.gz'%Path(s).stem for s in scenes]
+
+    for scene, data_path in zip(scenes, data_paths):
+        print (scene, data_path)
+        shortest_path_example(scene, data_path)
+
+    # shortest_path_example(0)
+    # shortest_path_example(1)
+    # shortest_path_example(2)
+
+
+if __name__ == "__main__":
+    main()
 
 
 
@@ -220,11 +249,3 @@ def shortest_path_example(episode_id):
 #         print("Episode finished")
 
 
-def main():
-    shortest_path_example(0)
-    # shortest_path_example(1)
-    # shortest_path_example(2)
-
-
-if __name__ == "__main__":
-    main()
