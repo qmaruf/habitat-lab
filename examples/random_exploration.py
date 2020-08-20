@@ -4,6 +4,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import joblib
 import habitat_sim
 from PIL import Image
 from habitat_sim.utils.common import d3_40_colors_rgb
@@ -21,6 +22,15 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from matplotlib import colors
 from myconfigs import category_map
+import hashlib
+import argparse
+
+parser = argparse.ArgumentParser(description='Description of your program')
+parser.add_argument('-save_segmentation_data','--save_segmentation_data', help='save data for segmentaion training', action='store_true')
+args = vars(parser.parse_args())
+
+print (args)
+
 
 cv2 = try_cv2_import()
 
@@ -192,36 +202,54 @@ def semantic_to_rgba(semantic_obs):
     return semantic_img
 
 
-def get_bbox(im_rgb, im_sem, label_dict):
-    def get_bbox(sobs, iid):
-        # print (sobs.shape, iid)
-        # exit()
-        X, Y = np.where(sobs==iid)
-        if len(X) and len(Y):
-            return min(Y), min(X), max(Y), max(X)
-        else:
-            return -1, -1, -1, -1
-
-    im_bbox = im_rgb.copy()
-    im_sem = np.asarray(im_sem)
-    for label_id in label_dict:
-        x1, y1, x2, y2 = get_bbox(im_sem, label_id)
-        if x1 != -1:
-            label = label_dict[label_id]
-            if label == 'floor':
-                im_bbox[im_sem==label_id, :] = [50,205,50]
-            #     print (im_bbox.shape, im_sem.shape)
-            #     exit()
-            # if label in ['wall', 'ceiling', 'handrail', 'stair', 'floor']:
-            #     print (label)
-            #     label = None
-            # im_bbox = draw_rect(im_bbox, [x1, y1, x2, y2], 'cv2', "green", label)
-    
-    return im_bbox
 
 
+# def get_bbox(im_rgb, im_sem, label_dict):
+#     def get_bbox(sobs, iid):
+#         # print (sobs.shape, iid)
+#         # exit()
+#         X, Y = np.where(sobs==iid)
+#         if len(X) and len(Y):
+#             return min(Y), min(X), max(Y), max(X)
+#         else:
+#             return -1, -1, -1, -1
+
+#     im_bbox = im_rgb.copy()
+#     im_sem = np.asarray(im_sem)
+
+#     with open('all_labels.txt', 'a') as fp:
+#         for label_id in label_dict:
+#             x1, y1, x2, y2 = get_bbox(im_sem, label_id)
+#             if x1 != -1:
+#                 label = label_dict[label_id]            
+#                 fp.write('%s\n'%label)
+#                 if label == 'floor':
+#                     im_bbox[im_sem==label_id, :] = [50,205,50]           
+#     return im_bbox
+
+
+habitat_label = dict()
+def get_floor_seg(im_rgb, im_sem, label_dict):
+    im_seg = im_rgb.copy()
+    im_seg[:] = 0
+    im_sem = np.asarray(im_sem)    
+    for label_id in label_dict:        
+        label = label_dict[label_id]
+        if label not in habitat_label:
+            habitat_label[label] = 1
+            with open('all_labels.txt', 'a') as fp:
+                fp.write('%s\n'%label)
+        if label in ['floor', 'rug']:
+            im_seg[im_sem==label_id, :] = [1,1,1]
+            
+    return im_seg
+
+
+# n_env = 0
 
 def shortest_path_example(scene, data_path, dataset):
+    global n_env
+    n_env += 1
     images = []
     images_rgb, images_sem, images_map = [], [], []
     config = habitat.get_config(config_paths="configs/tasks/pointnav.yaml")
@@ -256,6 +284,7 @@ def shortest_path_example(scene, data_path, dataset):
     else:
         raise Exception()
     
+    n_img = 0
     with SimpleRLEnv(config=config) as env:                   
         goal_radius = config.SIMULATOR.FORWARD_STEP_SIZE
         follower = ShortestPathFollower(env.habitat_env.sim, goal_radius, False)
@@ -265,18 +294,8 @@ def shortest_path_example(scene, data_path, dataset):
         n = 10 # len(env.episodes)
         for iii in range(n):
             env.reset()
-
-            print (dir(env.habitat_env.sim.sensor_suite))
-            # exit()
-        
-
-            print ('-------------'*10)
-            print ('-------------'*10)
-            print ('-------------'*10)
             print (env.habitat_env.current_episode)
-            print ('-------------'*10)
-            print ('-------------'*10)
-            print ('-------------'*10)
+            
         
             
             dirname = os.path.join(IMAGE_DIR, "shortest_path_example", out_vid)
@@ -294,28 +313,25 @@ def shortest_path_example(scene, data_path, dataset):
 
                 observations, reward, done, info = env.step(best_action)
                 
-                im_rgb = observations["rgb"]
-                im_rgb = detect_object(im_rgb)
+                # im_rgb = observations["rgb"]
+                # im_rgb = detect_object(im_rgb)
 
-                im_sem = semantic_to_rgba(observations["semantic"])
+                # im_sem = semantic_to_rgba(observations["semantic"])
                 
-                top_down_map = draw_top_down_map(
-                    info, observations["heading"][0], im_rgb.shape[0]
-                )
+                # top_down_map = draw_top_down_map(
+                #     info, observations["heading"][0], im_rgb.shape[0]
+                # )
 
-                im_bbox = get_bbox(observations["rgb"].copy(), observations["semantic"].copy(), instance_id_to_label_name)
-                output_im = np.concatenate((im_rgb, im_sem, top_down_map, im_bbox), axis=1)
-                # plt.figure()
-                # plt.imshow(output_im)
-                # plt.savefig('tmp.jpg')
-                # exit()
-                # images_rgb.append(im_rgb)
-                # images_sem.append(im_sem)
-                # images_map.append(top_down_map)
-
+                im_seg = get_floor_seg(observations["rgb"].copy(), observations["semantic"].copy(), instance_id_to_label_name)
                 
-        
-                images.append(output_im)
+                # output_im = np.concatenate((im_rgb, im_sem, top_down_map, im_seg), axis=1)
+                # images.append(output_im)
+                # if args['save_segmentation_data']:
+                #     seg_data = [observations["rgb"].copy(), im_seg]
+                #     if n_img%5==0:
+                #         joblib.dump(seg_data, '/data/data/segmentation_data/env%02dimg%02d.jlib'%(n_env, n_img))
+                #     n_img += 1
+
         
             
         
@@ -351,7 +367,8 @@ def main(dataset):
         if Path(scene).is_file() and Path(data_path).is_file():
             shortest_path_example(scene, data_path, dataset)
             # break
-        
+
+n_env = 0  
 if __name__ == "__main__":
     # main('gibson')
     main('mp3d')
