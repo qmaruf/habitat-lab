@@ -27,6 +27,7 @@ import argparse
 
 parser = argparse.ArgumentParser(description='Description of your program')
 parser.add_argument('-save_segmentation_data','--save_segmentation_data', help='save data for segmentaion training', action='store_true')
+parser.add_argument('-detect_object','--detect_object', help='detect object', action='store_true')
 args = vars(parser.parse_args())
 
 print (args)
@@ -239,7 +240,7 @@ def get_floor_seg(im_rgb, im_sem, label_dict):
             habitat_label[label] = 1
             with open('all_labels.txt', 'a') as fp:
                 fp.write('%s\n'%label)
-        if label in ['floor', 'rug']:
+        if label in ['floor', 'rug', 'mat']:
             im_seg[im_sem==label_id, :] = [1,1,1]
             
     return im_seg
@@ -295,14 +296,8 @@ def shortest_path_example(scene, data_path, dataset):
         for iii in range(n):
             env.reset()
             print (env.habitat_env.current_episode)
-            
-        
-            
             dirname = os.path.join(IMAGE_DIR, "shortest_path_example", out_vid)
-        
-            
             print("Agent stepping around inside environment.")
-            
             
             while not env.habitat_env.episode_over:
                 best_action = follower.get_next_action(
@@ -311,26 +306,24 @@ def shortest_path_example(scene, data_path, dataset):
                 if best_action is None:
                     break
 
-                observations, reward, done, info = env.step(best_action)
-                
-                # im_rgb = observations["rgb"]
-                # im_rgb = detect_object(im_rgb)
+                observations, reward, done, info = env.step(best_action)                
+                im_rgb = observations["rgb"]
+                if args['detect_object']:
+                    im_rgb = detect_object(im_rgb)
 
-                # im_sem = semantic_to_rgba(observations["semantic"])
-                
-                # top_down_map = draw_top_down_map(
-                #     info, observations["heading"][0], im_rgb.shape[0]
-                # )
-
+                im_sem = semantic_to_rgba(observations["semantic"])                
+                top_down_map = draw_top_down_map(
+                    info, observations["heading"][0], im_rgb.shape[0]
+                )
                 im_seg = get_floor_seg(observations["rgb"].copy(), observations["semantic"].copy(), instance_id_to_label_name)
                 
-                # output_im = np.concatenate((im_rgb, im_sem, top_down_map, im_seg), axis=1)
-                # images.append(output_im)
-                # if args['save_segmentation_data']:
-                #     seg_data = [observations["rgb"].copy(), im_seg]
-                #     if n_img%5==0:
-                #         joblib.dump(seg_data, '/data/data/segmentation_data/env%02dimg%02d.jlib'%(n_env, n_img))
-                #     n_img += 1
+                output_im = np.concatenate((im_rgb, im_sem, top_down_map, im_seg), axis=1)
+                images.append(output_im)
+                if args['save_segmentation_data']:
+                    seg_data = [observations["rgb"].copy(), im_seg]
+                    # if n_img%2==0:
+                    joblib.dump(seg_data, '/data/data/segmentation_data/env%02dimg%02d.jlib'%(n_env, n_img))
+                    n_img += 1
 
         
             
@@ -353,7 +346,7 @@ def get_scenes_data_paths(dataset):
         scenes = glob("/data/data/Replica-Dataset/dataset/*/habitat/mesh_semantic.ply")
         data_paths = ['/habitat-api/pointnavs/replica/%s.json.gz'%Path(s).parts[-3] for s in scenes]
     elif dataset == 'mp3d':
-        scenes = glob('/data/data/matterport3d/v1/tasks/mp3d/*/*.glb')
+        scenes = glob('/data/data/matterport3d/v1/tasks/mp3d/*/*.glb')        
         data_paths = ['/habitat-api/pointnavs/%s.json.gz'%Path(s).stem for s in scenes]
     elif dataset == 'gibson':
         scenes = glob('/data/data/gibson/*.glb')
