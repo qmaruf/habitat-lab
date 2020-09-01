@@ -22,6 +22,14 @@ from pathlib import Path
 from matplotlib import colors
 from myconfigs import category_map
 from glob import glob
+import argparse
+import joblib
+from tqdm import tqdm
+
+parser = argparse.ArgumentParser(description='Description of your program')
+parser.add_argument('-save_segmentation_data','--save_segmentation_data', help='save data for segmentaion training', action='store_true')
+parser.add_argument('-save_video','--save_video', help='save video for segmentaion training', action='store_true')
+args = vars(parser.parse_args())
 
 cv2 = try_cv2_import()
 
@@ -143,7 +151,7 @@ def get_scene(scene_path):
         "sensor_height": 1,  # Height of sensors in meters
         "color_sensor": True,  # RGB sensor
         "semantic_sensor": True,  # Semantic sensor
-        "depth_sensor": True,  # Depth sensor
+        "depth_sensor": False,  # Depth sensor
         "seed": 1,
     }
 
@@ -172,7 +180,20 @@ def get_floor_seg(im_rgb, im_sem, label_dict):
     return im_seg
 
 
+def get_scene_key(dataset, config):
+    if dataset == 'replica':
+        skey = Path(config.SIMULATOR.SCENE).parts[-3]
+    elif dataset == 'mp3d':
+        skey = Path(config.SIMULATOR.SCENE).parts[-2]
+    elif dataset == 'gibson':
+        skey = Path(config.SIMULATOR.SCENE).stem
+    else:
+        raise Exception()
+    return skey
+
 def shortest_path_example(scene, data_path, dataset):
+
+    sensor_size = 512
     images = []
     images_rgb, images_sem, images_map = [], [], []
     config = habitat.get_config(config_paths="configs/tasks/pointnav.yaml")
@@ -182,10 +203,10 @@ def shortest_path_example(scene, data_path, dataset):
     config.SIMULATOR.SCENE = scene
     config.DATASET.DATA_PATH = data_path
     config.ENVIRONMENT.ITERATOR_OPTIONS.SHUFFLE=False
-    config.SIMULATOR.RGB_SENSOR.HEIGHT = 1024
-    config.SIMULATOR.RGB_SENSOR.WIDTH = 1024
-    config.SIMULATOR.SEMANTIC_SENSOR.HEIGHT = 1024
-    config.SIMULATOR.SEMANTIC_SENSOR.WIDTH = 1024
+    config.SIMULATOR.RGB_SENSOR.HEIGHT = sensor_size
+    config.SIMULATOR.RGB_SENSOR.WIDTH = sensor_size
+    config.SIMULATOR.SEMANTIC_SENSOR.HEIGHT = sensor_size
+    config.SIMULATOR.SEMANTIC_SENSOR.WIDTH = sensor_size
     config.freeze()
 
     scene_obj = get_scene(scene)
@@ -193,26 +214,23 @@ def shortest_path_example(scene, data_path, dataset):
     for obj in scene_obj.objects:
         if obj is not None:
             if obj.category is not None:
-                instance_id_to_label_name[int(obj.id.split("_")[-1])] = obj.category.name()    
+                instance_id_to_label_name[int(obj.id.split("_")[-1])] = obj.category.name()  
 
-    if dataset == 'replica':
-        out_vid = Path(config.SIMULATOR.SCENE).parts[-3]
-    elif dataset == 'mp3d':
-        out_vid = Path(config.SIMULATOR.SCENE).parts[-2]
-    elif dataset == 'gibson':
-        out_vid = Path(config.SIMULATOR.SCENE).stem
-    else:
-        raise Exception()
-    
+    # for key in instance_id_to_label_name:
+    #     print (key, instance_id_to_label_name[key])  
+
+    scene_key = get_scene_key(dataset, config)
+    n_img = 0
     with SimpleRLEnv(config=config) as env:                   
         goal_radius = config.SIMULATOR.FORWARD_STEP_SIZE
         follower = ShortestPathFollower(env.habitat_env.sim, goal_radius, False)
 
-        n = 2 # len(env.episodes)
-        for iii in range(n):
+        n = 10 # len(env.episodes)
+        output_im_shape = None
+        for iii in tqdm(range(n)):
             env.reset()
-            dirname = os.path.join(IMAGE_DIR, "shortest_path_example", out_vid)
-            print("Agent stepping around inside environment.")            
+            dirname = os.path.join(IMAGE_DIR, "shortest_path_example", scene_key)
+            # print("Agent stepping around inside environment.")            
             
             while not env.habitat_env.episode_over:
                 best_action = follower.get_next_action(
@@ -231,12 +249,31 @@ def shortest_path_example(scene, data_path, dataset):
                 )
 
                 im_seg = get_floor_seg(observations["rgb"].copy(), observations["semantic"].copy(), instance_id_to_label_name)
-                output_im = np.concatenate((im_rgb, im_sem, top_down_map, im_seg), axis=1)
 
+                
+                output_im = np.concatenate((im_rgb, im_sem, top_down_map, im_seg), axis=1)
+                
+                if output_im_shape is None:
+                    output_im_shape = output_im.shape
+                else:
+                    if output_im.shape != output_im_shape:
+                        output_im = cv2.resize(output_im, (output_im_shape[1], output_im_shape[0]))
+                
+
+                # print (output_im.shape)
                 images.append(output_im)
+                # print (im_seg.shape)
+                # exit()
+                if args['save_segmentation_data']:
+                    seg_data = [observations["rgb"].copy(), im_seg[:, :, 0]]         
+                    Path('/data/data/segmentation_data/%s'%scene_key).mkdir(parents=True, exist_ok=True)           
+                    joblib.dump(seg_data, '/data/data/segmentation_data/%s/%03d.jlib'%(scene_key, n_img))
+                    n_img += 1
         
         print (dirname)
-        images_to_video(images, dirname, out_vid)
+
+        if args['save_video']:
+            images_to_video(images, dirname, scene_key)
 
 def get_scenes_data_paths(dataset):
     if dataset == 'replica':
@@ -244,19 +281,23 @@ def get_scenes_data_paths(dataset):
         data_paths = ['/habitat-api/pointnavs/replica/%s.json.gz'%Path(s).parts[-3] for s in scenes]
     elif dataset == 'mp3d':
         scenes = glob('/data/data/matterport3d/v1/tasks/mp3d/*/*.glb')
-        data_paths = ['/data/data/pointnavs/%s.json.gz'%Path(s).stem for s in scenes]
+        data_paths = ['/data/data/pointnavs/mp3d/%s.json.gz'%Path(s).stem for s in scenes]
     elif dataset == 'gibson':
         scenes = glob('/data/data/gibson/*.glb')
         data_paths = ['/habitat-api/pointnavs/gibson/%s.json.gz'%Path(s).stem for s in scenes]
     return scenes, data_paths
 
 def main(dataset):    
+    done = 0
     scenes, data_paths = get_scenes_data_paths(dataset)   
     for scene, data_path in zip(scenes, data_paths):
+        if '2t7WUuJeko7' not in scene: continue
         print (scene, data_path)  
         if Path(scene).is_file() and Path(data_path).is_file():
             shortest_path_example(scene, data_path, dataset)
-            break
+            done += 1
+    
+    print (done)
         
 if __name__ == "__main__":
     main('mp3d')   
