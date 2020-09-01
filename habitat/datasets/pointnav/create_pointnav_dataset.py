@@ -11,7 +11,7 @@ import habitat
 import habitat_sim
 from habitat.datasets.pointnav.pointnav_generator import generate_pointnav_episode
 
-num_episodes_per_scene = int(1e2)
+num_episodes_per_scene = int(50)
 
 
 def _generate_fn(scene):
@@ -29,6 +29,8 @@ def _generate_fn(scene):
             sim, num_episodes_per_scene, is_gen_shortest_path=False
         )
     )
+
+    # print (dset.episodes)
     for ep in dset.episodes:        
         ep.scene_id = ep.scene_id        
 
@@ -38,10 +40,9 @@ def _generate_fn(scene):
     elif dataset == 'gibson':
         scene_key = Path(scene).stem
         out_file = f"/habitat-api/pointnavs/gibson/{scene_key}.json.gz"
-    elif dataset == 'mp3d':
-        raise Exception()
+    elif dataset == 'mp3d':        
         scene_key = Path(scene).stem
-        out_file = f"/habitat-api/pointnavs/{scene_key}.json.gz"
+        out_file = f"/data/data/pointnavs/mp3d/{scene_key}.json.gz"
 
     print ('out_file', out_file)
 
@@ -54,7 +55,7 @@ def _generate_fn(scene):
 # scenes = glob.glob("/data/data/gibson_semantic/*.glb")
 
 
-dataset = 'gibson'
+dataset = 'mp3d'
 
 if dataset == 'mp3d':
     scenes = glob.glob("/data/data/matterport3d/v1/tasks/mp3d/*/*.glb")
@@ -64,10 +65,15 @@ elif dataset == 'gibson':
     scenes = glob.glob("/data/data/gibson_semantic/*_semantic.ply")
 else:
     raise Exception()
-print (scenes)
+print (len(scenes))
+
+
+time_consuming_scene = ['V2XKFyX4ASd', 'pa4otMbVnkk', '8194nk5LbLH', 'pRbA3pwrgk9']
 
 for scene in scenes:
-    print (scene)
-    _generate_fn(scene)
+    if Path(scene).stem not in time_consuming_scene:
+        print (scene)
+        _generate_fn(scene)
+    # break
 
-print (scenes)
+# print (scenes)

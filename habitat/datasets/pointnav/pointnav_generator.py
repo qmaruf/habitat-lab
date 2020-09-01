@@ -123,7 +123,7 @@ def generate_pointnav_episode(
     """
     episode_count = 0
     source_position = None
-    num_episodes = 50
+    # num_episodes = 50
     while episode_count < num_episodes or num_episodes < 0:
         target_position = sim.sample_navigable_point()
 
